@@ -3,12 +3,70 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>elmalimia.store</title>
+  <title>elmalimia-tools</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="canvasA">
-    <div id="limKing">👑lim</div>
+    <div id="modeSwitch">
+      <button id="btnAI" class="modeButton" type="button" onclick="setMode('ai')">[ AI ]</button>
+      <button id="btnHuman" class="modeButton" type="button" onclick="setMode('human')">[ Human ]</button>
+    </div>
+
+    <div id="hero">
+      <div id="limKing">👑lim</div>
+
+      <div id="humanView" class="view">
+        <h1 id="humanTitle">welcome to elmalimia-tools.</h1>
+        <p id="humanSubtitle">A tool to help understand mathematics</p>
+        <p id="humanDescription">(el)L; mathematics lim and artificial intelligence (AI)</p>
+        <p id="humanDescription">This version was made by a human</p>
+      </div>
+
+      <div id="aiView" class="view hidden">
+        <div id="aiWelcome">welcome to elmalimia-tools</div>
+
+        <div id="dialog">
+          <p>Hello. I'm King Limit.</p>
+          <p>Why king?</p>
+          <p>Because not everything reaches.</p>
+          <p class="finalLine">lim f(x) = L, x → ∞. Any questions?</p>
+        </div>
+      </div>
+
+      <a id="enterButton" href="#">Open Tools</a>
+    </div>
   </div>
+
+  <script>
+    function setMode(mode) {
+      const aiView = document.getElementById('aiView');
+      const humanView = document.getElementById('humanView');
+      const btnAI = document.getElementById('btnAI');
+      const btnHuman = document.getElementById('btnHuman');
+
+      if (mode === 'ai') {
+        aiView.classList.remove('hidden');
+        humanView.classList.add('hidden');
+
+        btnAI.classList.remove('inactive');
+        btnAI.classList.add('active');
+
+        btnHuman.classList.remove('active');
+        btnHuman.classList.add('inactive');
+      } else {
+        humanView.classList.remove('hidden');
+        aiView.classList.add('hidden');
+
+        btnHuman.classList.remove('inactive');
+        btnHuman.classList.add('active');
+
+        btnAI.classList.remove('active');
+        btnAI.classList.add('inactive');
+      }
+    }
+
+    setMode('human');
+  </script>
 </body>
 </html>

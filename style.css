@@ -6,22 +6,164 @@ body {
 }
 
 body {
-  font-family: system-ui;
+  font-family: system-ui, sans-serif;
+  background: #0a0a0a;
+  color: #ffffff;
 }
 
 #canvasA {
   position: relative;
   width: 100vw;
   height: 100vh;
-  background: #0a0a0a;
   overflow: hidden;
 }
 
-#limKing {
+#modeSwitch {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+}
+
+.modeButton {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
+  padding: 0;
+  margin: 0 6px 0 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.modeButton.active {
+  color: #ff2b2b;
+}
+
+.modeButton.inactive {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.modeButton:hover {
+  color: #ffffff;
+}
+
+#hero {
   position: absolute;
   top: 50%;
   left: 50%;
+  width: min(92vw, 900px);
   transform: translate(-50%, -50%);
-  font-size: 48px;
-  color: white;
+  text-align: center;
+}
+
+#limKing {
+  font-size: 72px;
+  line-height: 1;
+  margin-bottom: 34px;
+}
+
+.view {
+  min-height: 280px;
+}
+
+.hidden {
+  display: none;
+}
+
+/* HUMAN VIEW */
+
+#humanTitle {
+  margin: 0 0 28px 0;
+  font-size: clamp(38px, 5vw, 74px);
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+#humanSubtitle {
+  margin: 0 0 30px 0;
+  font-size: clamp(20px, 2.2vw, 34px);
+  line-height: 1.3;
+  font-weight: 400;
+}
+
+#humanDescription {
+  margin: 0;
+  font-size: clamp(18px, 1.8vw, 28px);
+  line-height: 1.4;
+  opacity: 0.88;
+  font-weight: 400;
+}
+
+/* AI VIEW */
+
+#aiWelcome {
+  margin: 0 0 34px 0;
+  font-size: clamp(24px, 3vw, 42px);
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+#dialog {
+  display: inline-block;
+  text-align: left;
+  font-size: clamp(22px, 2.4vw, 38px);
+  line-height: 1.8;
+}
+
+#dialog p {
+  margin: 0 0 12px 0;
+}
+
+#dialog .finalLine {
+  margin-top: 18px;
+  font-weight: 700;
+}
+
+/* BUTTON */
+
+#enterButton {
+  display: inline-block;
+  margin-top: 42px;
+  padding: 20px 38px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 18px;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 24px;
+  line-height: 1;
+}
+
+#enterButton:hover {
+  border-color: #ffffff;
+}
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+  #modeSwitch {
+    top: 16px;
+    left: 16px;
+  }
+
+  .modeButton {
+    font-size: 22px;
+  }
+
+  #limKing {
+    font-size: 56px;
+    margin-bottom: 26px;
+  }
+
+  .view {
+    min-height: auto;
+  }
+
+  #enterButton {
+    margin-top: 30px;
+    padding: 16px 28px;
+    font-size: 20px;
+    border-radius: 14px;
+  }
 }
