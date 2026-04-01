@@ -1,0 +1,14 @@
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+}
+
+#canvasA {
+  height: 100%;
+  box-sizing: border-box;
+  border: 4px solid red;
+}
