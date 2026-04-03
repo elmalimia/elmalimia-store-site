@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Earth Moon Scene</title>
+  <style>
+    :root {
+      --bg: #000;
+      --panel-bg: rgba(0, 0, 0, 0.35);
+      --panel-border: rgba(255, 255, 255, 0.15);
+      --frame-bg: rgba(0, 0, 0, 0.55);
+      --frame-border: rgba(255, 255, 255, 0.25);
+      --text: #fff;
+      --font: Arial, sans-serif;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    body {
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #zoomSlider {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 10;
+      width: 320px;
+      height: 28px;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      accent-color: white;
+      opacity: 0.9;
+    }
+
+    #hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 20;
+      padding: 10px 14px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: var(--panel-bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <input
+    id="zoomSlider"
+    type="range"
+    min="0"
+    max="100"
+    value="35"
+    step="1"
+  />
+
+  <div id="hud">
+    <div id="zoomValue">Zoom: 1.00x</div>
+    <div id="distanceValue">Distance: 384,400 km</div>
+    <div id="missionValue">Mission: Launch | 0.0%</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("scene");
+    const ctx = canvas.getContext("2d");
+    const zoomSlider = document.getElementById("zoomSlider");
+    const hud = document.getElementById("hud");
+    const zoomValue = document.getElementById("zoomValue");
+    const distanceValue = document.getElementById("distanceValue");
+    const missionValue = document.getElementById("missionValue");
+
+    const DEFAULT_TIMESTAMP = "2026-04-03T00:00:00Z";
+    const TWO_PI = Math.PI * 2;
+
+    let insetButtonBounds = null;
+    let isDraggingInset = false;
+    let lastPointerX = 0;
+    let didDragInset = false;
+
+    const scene = {
+      starCount: 250,
+
+      zoom: {
+        value: 0.35,
+        minScale: 0.18,
+        maxScale: 1.8
+      },
+
+      metrics: {
+        earthMoonDistanceKm: 384400
+      },
+
+      earth: {
+        yRatio: 0.5,
+        diameterRatioToScreenHeight: 1 / 3
+      },
+
+      moon: {
+        yRatio: 0.5,
+        diameterRatioToEarth: 0.273
+      },
+
+      sun: {
+        angle: (-30 * Math.PI) / 180,
+        length: 120
+      },
+
+      inset: {
+        width: 520,
+        height: 360,
+        margin: 20,
+        collapsed: false,
+        headerHeight: 34
+      },
+
+      system: {
+        moonOrbitAngle: 0,
+        moonOrbitRadius: 0.78,
+        baseMoonOrbitAngle: 0,
+        siderealPeriodDays: 27.321661
+      },
+
+      observation: {
+        timestamp: DEFAULT_TIMESTAMP,
+        moonDistanceKm: 396594,
+        moonIllumination: 0.991
+      },
+
+      time: {
+        elapsedHours: 0,
+        hoursPerStep: 1,
+        autoPlay: false,
+        lastTickMs: 0,
+        speedMsPerHour: 250
+      },
+
+      mission: {
+        totalFlightHours: 72,
+        startAngleOffset: -0.15,
+        arcHeight: 0.25,
+        capsuleSize: 4
+      },
+
+      stars: []
+    };
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      generateStars();
+    }
+
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getZoomScale() {
+      return lerp(scene.zoom.minScale, scene.zoom.maxScale, scene.zoom.value);
+    }
+
+    function getEarthRadius() {
+      return (canvas.height * scene.earth.diameterRatioToScreenHeight) / 2;
+    }
+
+    function getMoonRadius(earthRadius) {
+      return earthRadius * scene.moon.diameterRatioToEarth;
+    }
+
+    function getMissionProgress() {
+      return clamp(
+        scene.time.elapsedHours / scene.mission.totalFlightHours,
+        0,
+        1
+      );
+    }
+
+    function getMissionStatus() {
+      const progress = getMissionProgress();
+
+      if (progress < 0.05) {
+        return "Launch";
+      }
+
+      if (progress < 0.75) {
+        return "Trans-Lunar Coast";
+      }
+
+      if (progress < 0.98) {
+        return "Approach";
+      }
+
+      return "Lunar Arrival";
+    }
+
+    function getMissionStatusColor() {
+      const progress = getMissionProgress();
+
+      if (progress < 0.05) {
+        return "rgba(255,220,120,0.95)";
+      }
+
+      if (progress < 0.75) {
+        return "rgba(180,220,255,0.95)";
+      }
+
+      if (progress < 0.98) {
+        return "rgba(255,210,140,0.95)";
+      }
+
+      return "rgba(180,255,180,0.95)";
+    }
+
+    function getQuadraticBezierPoint(p0, p1, p2, t) {
+      const u = 1 - t;
+
+      return {
+        x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+        y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+      };
+    }
+
+    function updateHud() {
+      const zoomScale = getZoomScale();
+      const distanceKm = scene.metrics.earthMoonDistanceKm;
+      const progressPercent = (getMissionProgress() * 100).toFixed(1);
+
+      zoomValue.textContent = `Zoom: ${zoomScale.toFixed(2)}x`;
+      distanceValue.textContent = `Distance: ${distanceKm.toLocaleString("en-US")} km`;
+      missionValue.textContent = `Mission: ${getMissionStatus()} | ${progressPercent}%`;
+      missionValue.style.color = getMissionStatusColor();
+    }
+
+    function generateStars() {
+      scene.stars = Array.from({ length: scene.starCount }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.5 + 0.3,
+        a: Math.random() * 0.8 + 0.2
+      }));
+    }
+
+    function drawBackground() {
+      const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      bg.addColorStop(0, "#02040a");
+      bg.addColorStop(1, "#000000");
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawStars() {
+      for (const star of scene.stars) {
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.r, 0, TWO_PI);
+        ctx.fillStyle = `rgba(255,255,255,${star.a})`;
+        ctx.fill();
+      }
+    }
+
+    function drawLightShadow(x, y, r) {
+      const angle = scene.sun.angle;
+      const lx = Math.cos(angle);
+      const ly = Math.sin(angle);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TWO_PI);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(
+        x - lx * r,
+        y - ly * r,
+        x + lx * r,
+        y + ly * r
+      );
+
+      grad.addColorStop(0.0, "rgba(0,0,0,0.55)");
+      grad.addColorStop(0.42, "rgba(0,0,0,0.28)");
+      grad.addColorStop(0.5, "rgba(0,0,0,0.10)");
+      grad.addColorStop(0.58, "rgba(255,255,255,0.02)");
+      grad.addColorStop(1.0, "rgba(255,255,255,0.10)");
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      ctx.restore();
+    }
+
+    function drawEarth(x, y, r) {
+      const gradient = ctx.createRadialGradient(
+        x - r * 0.35,
+        y - r * 0.35,
+        r * 0.15,
+        x,
+        y,
+        r
+      );
+
+      gradient.addColorStop(0, "#6fd3ff");
+      gradient.addColorStop(0.45, "#1f7ed6");
+      gradient.addColorStop(1, "#0a2a66");
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TWO_PI);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.fillStyle = "#4caf50";
+
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.2, y - r * 0.15, r * 0.22, r * 0.12, 0.5, 0, TWO_PI);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(x + r * 0.18, y - r * 0.05, r * 0.16, r * 0.09, -0.3, 0, TWO_PI);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.05, y + r * 0.2, r * 0.28, r * 0.11, 0.15, 0, TWO_PI);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.1, y - r * 0.28, r * 0.22, r * 0.06, 0.2, 0, TWO_PI);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(x + r * 0.12, y + r * 0.12, r * 0.18, r * 0.05, -0.4, 0, TWO_PI);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, r * 1.08, 0, TWO_PI);
+      ctx.strokeStyle = "rgba(100,180,255,0.25)";
+      ctx.lineWidth = r * 0.08;
+      ctx.stroke();
+
+      drawLightShadow(x, y, r);
+    }
+
+    function drawMoon(x, y, r) {
+      const gradient = ctx.createRadialGradient(
+        x - r * 0.3,
+        y - r * 0.3,
+        r * 0.1,
+        x,
+        y,
+        r
+      );
+
+      gradient.addColorStop(0, "#dddddd");
+      gradient.addColorStop(0.6, "#aaaaaa");
+      gradient.addColorStop(1, "#7f7f7f");
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TWO_PI);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      const craters = [
+        { dx: -0.28, dy: -0.18, rr: 0.16 },
+        { dx: 0.22, dy: -0.08, rr: 0.12 },
+        { dx: -0.08, dy: 0.18, rr: 0.1 },
+        { dx: 0.12, dy: 0.26, rr: 0.07 },
+        { dx: -0.24, dy: 0.08, rr: 0.09 }
+      ];
+
+      for (const crater of craters) {
+        ctx.beginPath();
+        ctx.arc(x + r * crater.dx, y + r * crater.dy, r * crater.rr, 0, TWO_PI);
+        ctx.fillStyle = "rgba(90,90,90,0.35)";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(
+          x + r * crater.dx,
+          y + r * crater.dy,
+          r * crater.rr * 0.7,
+          0,
+          TWO_PI
+        );
+        ctx.fillStyle = "rgba(220,220,220,0.12)";
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(x, y, r * 1.05, 0, TWO_PI);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = r * 0.05;
+      ctx.stroke();
+
+      drawLightShadow(x, y, r);
+    }
+
+    function drawSunDirectionArrow() {
+      const centerX = canvas.width / 2;
+      const centerY = 80;
+      const length = scene.sun.length;
+      const angle = scene.sun.angle;
+      const endX = centerX + Math.cos(angle) * length;
+      const endY = centerY + Math.sin(angle) * length;
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = "rgba(255,255,0,0.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const headSize = 8;
+      const a1 = angle + Math.PI * 0.8;
+      const a2 = angle - Math.PI * 0.8;
+
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX + Math.cos(a1) * headSize, endY + Math.sin(a1) * headSize);
+      ctx.lineTo(endX + Math.cos(a2) * headSize, endY + Math.sin(a2) * headSize);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255,255,0,0.9)";
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,150,0.9)";
+      ctx.font = "14px Arial";
+      ctx.fillText("Sun", centerX - 18, centerY - 10);
+    }
+
+    function drawInsetFrame() {
+      const fullWidth = scene.inset.width;
+      const fullHeight = scene.inset.height;
+      const margin = scene.inset.margin;
+      const headerHeight = scene.inset.headerHeight;
+
+      const frameWidth = fullWidth;
+      const frameHeight = scene.inset.collapsed ? headerHeight : fullHeight;
+      const frameX = canvas.width - frameWidth - margin;
+      const frameY = canvas.height - frameHeight - margin;
+
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(frameX, frameY, frameWidth, frameHeight);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(frameX, frameY, frameWidth, frameHeight);
+
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "bold 18px Arial";
+      ctx.fillText("Observation Frame", frameX + 14, frameY + 24);
+
+      const buttonSize = 22;
+      const buttonX = frameX + frameWidth - buttonSize - 10;
+      const buttonY = frameY + 6;
+
+      insetButtonBounds = {
+        x: buttonX,
+        y: buttonY,
+        w: buttonSize,
+        h: buttonSize
+      };
+
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(buttonX, buttonY, buttonSize, buttonSize);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.strokeRect(buttonX, buttonY, buttonSize, buttonSize);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      ctx.moveTo(buttonX + 6, buttonY + buttonSize / 2);
+      ctx.lineTo(buttonX + buttonSize - 6, buttonY + buttonSize / 2);
+
+      if (scene.inset.collapsed) {
+        ctx.moveTo(buttonX + buttonSize / 2, buttonY + 6);
+        ctx.lineTo(buttonX + buttonSize / 2, buttonY + buttonSize - 6);
+      }
+
+      ctx.stroke();
+
+      if (scene.inset.collapsed) {
+        return;
+      }
+
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.font = "16px Arial";
+      ctx.fillText(`Time: ${scene.observation.timestamp}`, frameX + 14, frameY + 58);
+      ctx.fillText(
+        `Distance: ${scene.observation.moonDistanceKm.toLocaleString("en-US")} km`,
+        frameX + 14,
+        frameY + 84
+      );
+      ctx.fillText(
+        `Illumination: ${(scene.observation.moonIllumination * 100).toFixed(1)}%`,
+        frameX + 14,
+        frameY + 110
+      );
+      ctx.fillText(`Elapsed: ${scene.time.elapsedHours} h`, frameX + 14, frameY + 136);
+      ctx.fillText(
+        `Period: ${scene.system.siderealPeriodDays.toFixed(3)} d`,
+        frameX + 14,
+        frameY + 162
+      );
+
+      ctx.fillStyle = getMissionStatusColor();
+      ctx.font = "bold 17px Arial";
+      ctx.fillText(`Status: ${getMissionStatus()}`, frameX + 14, frameY + 194);
+
+      drawInsetEarthMoonSystem(frameX, frameY, frameWidth, frameHeight);
+    }
+
+    function drawInsetEarthMoonSystem(frameX, frameY, frameWidth, frameHeight) {
+      const earthX = frameX + frameWidth * 0.62;
+      const earthY = frameY + frameHeight * 0.66;
+      const earthRadius = 58;
+      const moonRadius = earthRadius * scene.moon.diameterRatioToEarth;
+      const orbitBase = Math.min(frameWidth, frameHeight) * 0.26;
+      const orbitRadius = orbitBase * scene.system.moonOrbitRadius;
+      const angle = scene.system.moonOrbitAngle;
+
+      const moonX = earthX + Math.cos(angle) * orbitRadius;
+      const moonY = earthY + Math.sin(angle) * orbitRadius;
+
+      ctx.beginPath();
+      ctx.arc(earthX, earthY, orbitRadius, 0, TWO_PI);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(earthX, earthY);
+      ctx.lineTo(moonX, moonY);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      drawEarth(earthX, earthY, earthRadius);
+      drawMoon(moonX, moonY, moonRadius);
+      drawInsetCapsule(earthX, earthY, earthRadius, moonX, moonY, moonRadius);
+
+      ctx.fillStyle = "rgba(255,255,255,0.82)";
+      ctx.font = "16px Arial";
+      ctx.fillText("Earth", earthX - 22, earthY + earthRadius + 24);
+      ctx.fillText("Moon", moonX - 26, moonY + moonRadius + 28);
+    }
+
+    function setMoonForDate(timestamp) {
+      scene.observation.timestamp = timestamp;
+      scene.time.elapsedHours = 0;
+
+      if (timestamp === DEFAULT_TIMESTAMP) {
+        scene.observation.moonDistanceKm = 396594;
+        scene.observation.moonIllumination = 0.991;
+        scene.system.moonOrbitAngle = Math.PI;
+        scene.system.baseMoonOrbitAngle = scene.system.moonOrbitAngle;
+        scene.system.moonOrbitRadius = 0.78;
+        return;
+      }
+
+      scene.observation.moonDistanceKm = 384400;
+      scene.observation.moonIllumination = 1;
+      scene.system.moonOrbitAngle = Math.PI;
+      scene.system.baseMoonOrbitAngle = scene.system.moonOrbitAngle;
+      scene.system.moonOrbitRadius = 0.75;
+    }
+
+    function updateMoonOrbitFromElapsedTime() {
+      const periodHours = scene.system.siderealPeriodDays * 24;
+      const anglePerHour = TWO_PI / periodHours;
+
+      scene.system.moonOrbitAngle =
+        scene.system.baseMoonOrbitAngle + scene.time.elapsedHours * anglePerHour;
+    }
+
+    function stepMoonByHours(hours) {
+      scene.time.elapsedHours += hours;
+      updateMoonOrbitFromElapsedTime();
+      render();
+    }
+
+    function toggleTimePlayback() {
+      scene.time.autoPlay = !scene.time.autoPlay;
+      scene.time.lastTickMs = scene.time.autoPlay ? performance.now() : 0;
+
+      if (scene.time.autoPlay) {
+        requestAnimationFrame(render);
+      }
+    }
+
+    function buildFlightPath(earthX, earthY, earthRadius, moonX, moonY, moonRadius, arcHeight) {
+      const startAngle = scene.mission.startAngleOffset;
+      const p0 = {
+        x: earthX + Math.cos(startAngle) * earthRadius,
+        y: earthY + Math.sin(startAngle) * earthRadius
+      };
+
+      const endAngle = Math.atan2(earthY - moonY, earthX - moonX);
+      const p2 = {
+        x: moonX + Math.cos(endAngle) * moonRadius,
+        y: moonY + Math.sin(endAngle) * moonRadius
+      };
+
+      const midX = (p0.x + p2.x) / 2;
+      const midY = (p0.y + p2.y) / 2;
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const normalX = -dy / length;
+      const normalY = dx / length;
+
+      const p1 = {
+        x: midX + normalX * length * arcHeight,
+        y: midY + normalY * length * arcHeight
+      };
+
+      return { p0, p1, p2 };
+    }
+
+    function drawTrajectoryAndCapsule(earthX, earthY, earthRadius, moonX, moonY, moonRadius) {
+      const { p0, p1, p2 } = buildFlightPath(
+        earthX,
+        earthY,
+        earthRadius,
+        moonX,
+        moonY,
+        moonRadius,
+        scene.mission.arcHeight
+      );
+
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const progress = getMissionProgress();
+      const capsulePosition = getQuadraticBezierPoint(p0, p1, p2, progress);
+      const tailSteps = 12;
+
+      for (let i = 0; i < tailSteps; i += 1) {
+        const t = progress - i * 0.01;
+        if (t < 0) {
+          continue;
+        }
+
+        const tailPoint = getQuadraticBezierPoint(p0, p1, p2, t);
+
+        ctx.beginPath();
+        ctx.arc(tailPoint.x, tailPoint.y, 2, 0, TWO_PI);
+        ctx.fillStyle = `rgba(255,255,255,${0.08 * (1 - i / tailSteps)})`;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(capsulePosition.x, capsulePosition.y, scene.mission.capsuleSize, 0, TWO_PI);
+      ctx.fillStyle = "white";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(
+        capsulePosition.x,
+        capsulePosition.y,
+        scene.mission.capsuleSize * 2.5,
+        0,
+        TWO_PI
+      );
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = "13px Arial";
+      ctx.fillText(getMissionStatus(), capsulePosition.x + 10, capsulePosition.y - 10);
+    }
+
+    function drawInsetCapsule(earthX, earthY, earthRadius, moonX, moonY, moonRadius) {
+      const { p0, p1, p2 } = buildFlightPath(
+        earthX,
+        earthY,
+        earthRadius,
+        moonX,
+        moonY,
+        moonRadius,
+        0.18
+      );
+
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const position = getQuadraticBezierPoint(p0, p1, p2, getMissionProgress());
+
+      ctx.beginPath();
+      ctx.arc(position.x, position.y, 3, 0, TWO_PI);
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(position.x, position.y, 7, 0, TWO_PI);
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fill();
+    }
+
+    function drawScene() {
+      clearCanvas();
+      drawBackground();
+      drawStars();
+      drawSunDirectionArrow();
+
+      const halfWidth = canvas.width / 2;
+      const centerX = halfWidth;
+      const zoomScale = getZoomScale();
+      const baseEarthRadius = getEarthRadius();
+      const earthRadius = baseEarthRadius * zoomScale;
+      const moonRadius = getMoonRadius(baseEarthRadius) * zoomScale;
+
+      const earthX = halfWidth * 0.5;
+      const earthY = canvas.height * scene.earth.yRatio;
+      const moonX = halfWidth + halfWidth * 0.5;
+      const moonY = canvas.height * scene.moon.yRatio;
+
+      drawEarth(earthX, earthY, earthRadius);
+      drawMoon(moonX, moonY, moonRadius);
+      drawTrajectoryAndCapsule(earthX, earthY, earthRadius, moonX, moonY, moonRadius);
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, 0);
+      ctx.lineTo(centerX, canvas.height);
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      drawInsetFrame();
+    }
+
+    function render(now = performance.now()) {
+      if (scene.time.autoPlay) {
+        const deltaMs = now - scene.time.lastTickMs;
+
+        if (deltaMs >= scene.time.speedMsPerHour) {
+          const steps = Math.floor(deltaMs / scene.time.speedMsPerHour);
+          scene.time.elapsedHours += steps * scene.time.hoursPerStep;
+          updateMoonOrbitFromElapsedTime();
+          scene.time.lastTickMs += steps * scene.time.speedMsPerHour;
+        }
+      }
+
+      drawScene();
+      updateHud();
+
+      if (scene.time.autoPlay) {
+        requestAnimationFrame(render);
+      }
+    }
+
+    function isInsideInset(x, y) {
+      const width = scene.inset.width;
+      const height = scene.inset.collapsed ? scene.inset.headerHeight : scene.inset.height;
+      const margin = scene.inset.margin;
+      const insetX = canvas.width - width - margin;
+      const insetY = canvas.height - height - margin;
+
+      return x >= insetX && x <= insetX + width && y >= insetY && y <= insetY + height;
+    }
+
+    function isInsideRect(x, y, rect) {
+      return (
+        rect &&
+        x >= rect.x &&
+        x <= rect.x + rect.w &&
+        y >= rect.y &&
+        y <= rect.y + rect.h
+      );
+    }
+
+    function getCanvasPointerPosition(event) {
+      const rect = canvas.getBoundingClientRect();
+
+      return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      };
+    }
+
+    function onResize() {
+      resizeCanvas();
+      render();
+    }
+
+    function onZoomInput() {
+      scene.zoom.value = Number(zoomSlider.value) / 100;
+      generateStars();
+      render();
+    }
+
+    function onKeyDown(event) {
+      if (event.code === "ArrowRight") {
+        stepMoonByHours(1);
+      }
+
+      if (event.code === "ArrowLeft") {
+        stepMoonByHours(-1);
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        toggleTimePlayback();
+      }
+    }
+
+    function onPointerDown(event) {
+      const { x, y } = getCanvasPointerPosition(event);
+
+      if (!isInsideInset(x, y) || isInsideRect(x, y, insetButtonBounds)) {
+        return;
+      }
+
+      isDraggingInset = true;
+      didDragInset = false;
+      lastPointerX = x;
+    }
+
+    function onPointerMove(event) {
+      if (!isDraggingInset) {
+        return;
+      }
+
+      const { x } = getCanvasPointerPosition(event);
+      const deltaX = x - lastPointerX;
+
+      lastPointerX = x;
+      scene.system.moonOrbitAngle += deltaX * 0.01;
+      scene.system.baseMoonOrbitAngle = scene.system.moonOrbitAngle;
+      didDragInset = true;
+
+      generateStars();
+      render();
+    }
+
+    function stopInsetDrag() {
+      isDraggingInset = false;
+    }
+
+    function onCanvasClick(event) {
+      if (didDragInset) {
+        didDragInset = false;
+        return;
+      }
+
+      const { x, y } = getCanvasPointerPosition(event);
+
+      if (isInsideRect(x, y, insetButtonBounds)) {
+        scene.inset.collapsed = !scene.inset.collapsed;
+        render();
+      }
+    }
+
+    function bindEvents() {
+      zoomSlider.addEventListener("input", onZoomInput);
+      window.addEventListener("resize", onResize);
+      window.addEventListener("keydown", onKeyDown);
+
+      canvas.addEventListener("mousedown", onPointerDown);
+      canvas.addEventListener("mousemove", onPointerMove);
+      canvas.addEventListener("mouseup", stopInsetDrag);
+      canvas.addEventListener("mouseleave", stopInsetDrag);
+      canvas.addEventListener("click", onCanvasClick);
+    }
+
+    function start() {
+      resizeCanvas();
+      setMoonForDate(DEFAULT_TIMESTAMP);
+      bindEvents();
+      render();
+    }
+
+    start();
+  </script>
+</body>
+</html>
