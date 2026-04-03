@@ -167,3 +167,30 @@ body {
     border-radius: 14px;
   }
 }
+
+#buttons {
+  margin-top: 42px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mainButton {
+  display: inline-block;
+  padding: 20px 38px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 18px;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.mainButton:hover {
+  border-color: #ffffff;
+}
+
+.mainButton.secondary {
+  opacity: 0.8;
+}
