@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Future Math Tools</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0f1117;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #e8ecf3;
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      cursor: default;
+      user-select: none;
+      overflow: hidden;
+      background:
+        linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px);
+      background-size: 40px 40px;
+      background-position: 0 0;
+    }
+
+    #world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .card {
+      position: absolute;
+      left: 240px;
+      top: 180px;
+      width: 440px;
+      min-height: 170px;
+      box-sizing: border-box;
+      padding: 18px 20px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 16px;
+      background: rgba(20, 24, 34, 0.92);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(4px);
+      cursor: grab;
+    }
+
+    .card.dragging {
+      cursor: grabbing;
+    }
+
+    .card-title {
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 12px;
+    }
+
+    .card-text {
+      font-size: 18px;
+      line-height: 1.5;
+      color: #f1f5fb;
+    }
+
+    .card-text a {
+      color: #9ecbff;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(158,203,255,0.45);
+    }
+
+    .card-text a:hover {
+      color: #c7e2ff;
+      border-bottom-color: rgba(199,226,255,0.8);
+    }
+
+    .hint {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: rgba(255,255,255,0.72);
+      background: rgba(0,0,0,0.28);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="world">
+      <div id="card" class="card">
+        <div class="card-title">Future Tools</div>
+        <div class="card-text">
+          👑lim: Oh, we are not open yet. These are future tools for learning mathematics.
+          Everyone has gone to watch the incredible event of people flying to the Moon.
+          Please go to the <a href="https://elmalimia.store/" target="_blank" rel="noopener noreferrer">main page</a>
+          and press the <strong>Moon Mission</strong> button.
+        </div>
+      </div>
+    </div>
+
+    <div class="hint">
+      Wheel: zoom<br>
+      Middle mouse: pan<br>
+      Or hold Space + left mouse: pan<br>
+      Drag the card with left mouse
+    </div>
+  </div>
+
+  <script>
+    const app = document.getElementById("app");
+    const world = document.getElementById("world");
+    const card = document.getElementById("card");
+
+    const state = {
+      scale: 1,
+      minScale: 0.35,
+      maxScale: 2.5,
+      offsetX: 0,
+      offsetY: 0
+    };
+
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panOriginX = 0;
+    let panOriginY = 0;
+
+    let isDraggingCard = false;
+    let cardStartX = 0;
+    let cardStartY = 0;
+    let cardOriginX = 240;
+    let cardOriginY = 180;
+
+    let spacePressed = false;
+
+    function applyTransform() {
+      world.style.transform = `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.scale})`;
+
+      const gridSize = 40 * state.scale;
+      app.style.backgroundSize = `${gridSize}px ${gridSize}px`;
+      app.style.backgroundPosition = `${state.offsetX}px ${state.offsetY}px`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getWorldPoint(clientX, clientY) {
+      return {
+        x: (clientX - state.offsetX) / state.scale,
+        y: (clientY - state.offsetY) / state.scale
+      };
+    }
+
+    app.addEventListener("wheel", (e) => {
+      e.preventDefault();
+
+      const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+      const newScale = clamp(state.scale * zoomFactor, state.minScale, state.maxScale);
+
+      const mouseWorldBefore = getWorldPoint(e.clientX, e.clientY);
+
+      state.scale = newScale;
+
+      state.offsetX = e.clientX - mouseWorldBefore.x * state.scale;
+      state.offsetY = e.clientY - mouseWorldBefore.y * state.scale;
+
+      applyTransform();
+    }, { passive: false });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        spacePressed = true;
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "Space") {
+        spacePressed = false;
+      }
+    });
+
+    app.addEventListener("mousedown", (e) => {
+      const clickedCard = e.target.closest(".card");
+
+      if (clickedCard && e.button === 0 && !spacePressed) {
+        isDraggingCard = true;
+        card.classList.add("dragging");
+
+        cardStartX = e.clientX;
+        cardStartY = e.clientY;
+        cardOriginX = parseFloat(card.style.left) || 240;
+        cardOriginY = parseFloat(card.style.top) || 180;
+        return;
+      }
+
+      if (e.button === 1 || (e.button === 0 && spacePressed)) {
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        panOriginX = state.offsetX;
+        panOriginY = state.offsetY;
+      }
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (isDraggingCard) {
+        const dx = (e.clientX - cardStartX) / state.scale;
+        const dy = (e.clientY - cardStartY) / state.scale;
+
+        card.style.left = `${cardOriginX + dx}px`;
+        card.style.top = `${cardOriginY + dy}px`;
+        return;
+      }
+
+      if (isPanning) {
+        state.offsetX = panOriginX + (e.clientX - panStartX);
+        state.offsetY = panOriginY + (e.clientY - panStartY);
+        applyTransform();
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      isPanning = false;
+
+      if (isDraggingCard) {
+        isDraggingCard = false;
+        card.classList.remove("dragging");
+      }
+    });
+
+    app.addEventListener("auxclick", (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+      }
+    });
+
+    card.style.left = "240px";
+    card.style.top = "180px";
+    applyTransform();
+  </script>
+</body>
+</html>
